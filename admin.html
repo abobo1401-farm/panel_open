@@ -1,0 +1,73 @@
+<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>4×4 パネル公開 管理</title><link rel="stylesheet" href="style.css"></head><body>
+<div class="wrap">
+  <div class="topbar"><h1>4×4 パネル画像公開システム</h1><div id="status" class="status">読み込み中…</div></div>
+  <div class="dock-note"><b>GitHub Pagesだけで使う場合：</b>この管理画面はOBSの「カスタムブラウザドック」に登録して使うのがおすすめです。OBS表示と同じ保存領域を使えるため、画像・文字設定がそのまま反映されます。</div>
+
+  <div class="card"><h2>基本設定</h2><div class="row">
+    <label class="field">企画名<input id="title" value="公開パネル"></label>
+    <label class="field">裏面モード<select id="mode"><option value="one">1枚絵（境目なし）</option><option value="individual">16枚個別（境目あり）</option></select></label>
+  </div></div>
+
+  <div class="card"><h2>表面画像</h2><div class="row"><input id="coverFile" type="file" accept="image/png,image/jpeg,image/webp"><button class="btn primary" id="coverBtn">表画像を設定</button></div><p class="muted">1枚の画像を4×4パネルとして自動表示します。表面にはパネルの境目があります。</p></div>
+
+  <div class="card"><h2>裏面画像</h2>
+    <div id="oneBox"><div class="row"><input id="oneFile" type="file" accept="image/png,image/jpeg,image/webp"><button class="btn primary" id="oneBtn">完成画像を設定</button></div><p class="muted">完成画像は1枚のまま背面に表示します。開いたパネル同士の境目は出ません。</p></div>
+    <div id="individualBox" class="hidden"><p class="muted">①〜⑯へ個別画像を設定します。透過PNGにも対応します。</p><div id="imageEditors" class="editor-grid"></div></div>
+  </div>
+
+  <div class="card"><h2>表面の文字</h2><div id="labelEditors" class="editor-grid"></div><p class="muted">初期値はすべて「？？？」。入力すると自動保存され、OBS側へ反映されます。</p></div>
+
+  <div class="card"><h2>効果音</h2><div class="row"><div class="range"><span>音量</span><input id="volume" type="range" min="0" max="1" step="0.05"><span id="volText"></span></div><button class="btn" id="soundTest">試聴</button></div><p class="muted">全パネル共通の短い「シュッ＋ポン」系SEです。16枚目も同じ音です。</p></div>
+
+  <div class="card"><h2>プレビュー / 操作</h2><div id="board"></div><div class="row" style="margin-top:12px"><button class="btn" id="closeAll">全部閉じる</button><button class="btn" id="openAll">全部開く</button><button class="btn primary" id="saveBtn">保存</button></div></div>
+</div>
+<script src="app.js"></script><script>
+(async()=>{
+ const PR=window.PanelReveal; let state=PR.loadState(); const $=id=>document.getElementById(id); let saveTimer=null;
+ function announce(text){$('status').textContent=text;}
+ function scheduleSave(){clearTimeout(saveTimer);saveTimer=setTimeout(()=>{PR.saveState(state);announce('保存済み・OBSへ反映');},120)}
+ function buildEditors(){
+   $('labelEditors').innerHTML='';
+   for(let i=0;i<16;i++){
+     const d=document.createElement('label'); d.className='editor-item';
+     d.innerHTML=`<strong>${i+1}</strong><input data-label="${i}" value="${(state.labels[i]||'').replace(/&/g,'&amp;').replace(/"/g,'&quot;')}">`;
+     $('labelEditors').appendChild(d);
+   }
+   $('imageEditors').innerHTML='';
+   for(let i=0;i<16;i++){
+     const d=document.createElement('div'); d.className='editor-item';
+     d.innerHTML=`<strong>${i+1}</strong><img class="thumb" data-thumb="${i}" alt=""><input data-file="${i}" type="file" accept="image/png,image/jpeg,image/webp"><div class="row"><button class="btn small" data-set="${i}">設定</button><button class="btn small danger" data-remove="${i}">削除</button></div>`;
+     $('imageEditors').appendChild(d);
+   }
+ }
+ async function refreshThumbs(){
+   for(let i=0;i<16;i++){
+     const el=document.querySelector(`[data-thumb="${i}"]`); if(!el) continue;
+     if(state.hasIndividual[i]) el.src=await PR.getImageUrl(`individual-${i}`); else el.removeAttribute('src');
+   }
+ }
+ async function update(){
+   $('title').value=state.title; $('mode').value=state.mode; $('volume').value=state.soundVolume; $('volText').textContent=Math.round(state.soundVolume*100)+'%';
+   $('oneBox').classList.toggle('hidden',state.mode!=='one'); $('individualBox').classList.toggle('hidden',state.mode!=='individual');
+   document.querySelectorAll('[data-label]').forEach(el=>{const i=+el.dataset.label;if(document.activeElement!==el)el.value=state.labels[i]});
+   await PR.renderBoard($('board'),state,{clickable:true,onClick:async i=>{PR.playFlipSound(state.soundVolume);state.opened[i]=true;PR.saveState(state);await update();}});
+   await refreshThumbs();
+ }
+ buildEditors(); await update(); announce('準備OK');
+ $('title').addEventListener('input',e=>{state.title=e.target.value;scheduleSave()});
+ $('mode').addEventListener('change',async e=>{state.mode=e.target.value;PR.saveState(state);await update()});
+ $('labelEditors').addEventListener('input',e=>{if(e.target.dataset.label!=null){state.labels[+e.target.dataset.label]=e.target.value;scheduleSave();PR.sendMessage({type:'state',state});}});
+ $('coverBtn').onclick=async()=>{const f=$('coverFile').files[0];if(!f)return;await PR.putImage('cover',f);state.hasCover=true;PR.saveState(state);await update();announce('表画像を保存しました')};
+ $('oneBtn').onclick=async()=>{const f=$('oneFile').files[0];if(!f)return;await PR.putImage('oneBack',f);state.hasOneBack=true;PR.saveState(state);await update();announce('完成画像を保存しました')};
+ $('imageEditors').addEventListener('click',async e=>{
+   if(e.target.dataset.set!=null){const i=+e.target.dataset.set;const f=document.querySelector(`[data-file="${i}"]`).files[0];if(!f)return;await PR.putImage(`individual-${i}`,f);state.hasIndividual[i]=true;PR.saveState(state);await update();announce(`${i+1}番画像を保存しました`)}
+   if(e.target.dataset.remove!=null){const i=+e.target.dataset.remove;await PR.removeImage(`individual-${i}`);state.hasIndividual[i]=false;PR.saveState(state);await update();}
+ });
+ $('volume').addEventListener('input',e=>{state.soundVolume=+e.target.value;$('volText').textContent=Math.round(state.soundVolume*100)+'%';scheduleSave()});
+ $('soundTest').onclick=()=>PR.playFlipSound(state.soundVolume);
+ $('closeAll').onclick=async()=>{state.opened=Array(16).fill(false);PR.saveState(state);await update()};
+ $('openAll').onclick=async()=>{state.opened=Array(16).fill(true);PR.saveState(state);await update()};
+ $('saveBtn').onclick=()=>{state.title=$('title').value;PR.saveState(state);announce('保存しました')};
+ PR.subscribeState(async(s,meta)=>{state=s;await update();});
+})();
+</script></body></html>
