@@ -140,7 +140,7 @@ function bgPos(i) {
   return `${col * 100 / 3}% ${row * 100 / 3}%`;
 }
 
-async function renderBoard(root, state, { clickable = false, onClick = null } = {}) {
+async function renderBoard(root, state, { clickable = false, allowOpenedClick = false, onClick = null } = {}) {
   const renderToken = String(Date.now()) + Math.random();
   root.dataset.renderToken = renderToken;
   root.innerHTML = '';
@@ -187,9 +187,10 @@ async function renderBoard(root, state, { clickable = false, onClick = null } = 
     const tile = document.createElement('button');
     tile.type = 'button';
     tile.className = 'tile' + (state.opened[i] ? ' open' : '');
+    if (state.opened[i] && allowOpenedClick) tile.classList.add('recloseable');
     tile.dataset.index = i;
-    tile.disabled = state.opened[i] || !clickable;
-    if (clickable && !state.opened[i]) tile.addEventListener('click', () => onClick?.(i, tile));
+    tile.disabled = !clickable || (state.opened[i] && !allowOpenedClick);
+    if (clickable && (!state.opened[i] || allowOpenedClick)) tile.addEventListener('click', () => onClick?.(i, tile));
 
     const cover = document.createElement('div');
     cover.className = 'tile-cover';

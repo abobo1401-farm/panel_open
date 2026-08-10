@@ -50,7 +50,24 @@
    $('title').value=state.title; $('mode').value=state.mode; $('volume').value=state.soundVolume; $('volText').textContent=Math.round(state.soundVolume*100)+'%';
    $('oneBox').classList.toggle('hidden',state.mode!=='one'); $('individualBox').classList.toggle('hidden',state.mode!=='individual');
    document.querySelectorAll('[data-label]').forEach(el=>{const i=+el.dataset.label;if(document.activeElement!==el)el.value=state.labels[i]});
-   await PR.renderBoard($('board'),state,{clickable:true,onClick:async i=>{PR.playFlipSound(state.soundVolume);state.opened[i]=true;PR.saveState(state);await update();}});
+   await PR.renderBoard($('board'),state,{clickable:true,allowOpenedClick:true,onClick:async(i,tile)=>{
+     if(state.opened[i]){
+       state.opened[i]=false;
+       PR.saveState(state);
+       await update();
+       announce(`${i+1}番パネルを戻しました`);
+       return;
+     }
+     if(!window.confirm(`${i+1}番パネルを本当に開けますか？`)) return;
+     PR.playFlipSound(state.soundVolume);
+     tile.classList.add('open');
+     setTimeout(async()=>{
+       state.opened[i]=true;
+       PR.saveState(state);
+       await update();
+       announce(`${i+1}番パネルを開きました`);
+     },610);
+   }});
    await refreshThumbs();
  }
  buildEditors(); await update(); announce('準備OK');
