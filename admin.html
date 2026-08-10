@@ -59,7 +59,6 @@
        return;
      }
      if(!window.confirm(`${i+1}番パネルを本当に開けますか？`)) return;
-     PR.playFlipSound(state.soundVolume);
      tile.classList.add('open');
      setTimeout(async()=>{
        state.opened[i]=true;

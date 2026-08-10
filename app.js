@@ -207,38 +207,60 @@ async function renderBoard(root, state, { clickable = false, allowOpenedClick = 
 }
 
 function playFlipSound(volume = 0.55) {
+  const vol = Math.max(0, Math.min(1, Number(volume ?? 0.55)));
+  try {
+    if (!playFlipSound.audioPool) {
+      playFlipSound.audioPool = Array.from({length: 4}, () => {
+        const a = new Audio('flip.wav');
+        a.preload = 'auto';
+        return a;
+      });
+      playFlipSound.audioIndex = 0;
+    }
+    const pool = playFlipSound.audioPool;
+    const a = pool[playFlipSound.audioIndex++ % pool.length];
+    a.pause();
+    a.currentTime = 0;
+    a.volume = vol;
+    const promise = a.play();
+    if (promise && typeof promise.catch === 'function') {
+      promise.catch(() => playFlipSoundWebAudio(vol));
+    }
+  } catch {
+    playFlipSoundWebAudio(vol);
+  }
+}
+
+function playFlipSoundWebAudio(volume = 0.55) {
   try {
     const AudioCtx = window.AudioContext || window.webkitAudioContext;
     if (!AudioCtx) return;
-    const ctx = playFlipSound.ctx || (playFlipSound.ctx = new AudioCtx());
-    if (ctx.state === 'suspended') ctx.resume();
+    const ctx = playFlipSoundWebAudio.ctx || (playFlipSoundWebAudio.ctx = new AudioCtx());
+    if (ctx.state === 'suspended') ctx.resume().catch(()=>{});
     const now = ctx.currentTime;
     const master = ctx.createGain();
     master.gain.setValueAtTime(Math.max(0, Math.min(1, volume)) * 0.28, now);
     master.connect(ctx.destination);
-
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
     osc.type = 'triangle';
-    osc.frequency.setValueAtTime(780, now);
-    osc.frequency.exponentialRampToValueAtTime(250, now + 0.11);
-    gain.gain.setValueAtTime(0.0001, now);
-    gain.gain.exponentialRampToValueAtTime(0.9, now + 0.008);
-    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.14);
+    osc.frequency.setValueAtTime(900, now);
+    osc.frequency.exponentialRampToValueAtTime(420, now + 0.16);
+    gain.gain.setValueAtTime(0.001, now);
+    gain.gain.exponentialRampToValueAtTime(0.8, now + 0.01);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.18);
     osc.connect(gain).connect(master);
-    osc.start(now); osc.stop(now + 0.15);
-
-    const osc2 = ctx.createOscillator();
-    const gain2 = ctx.createGain();
-    osc2.type = 'sine';
-    osc2.frequency.setValueAtTime(1050, now + 0.09);
-    osc2.frequency.exponentialRampToValueAtTime(1350, now + 0.16);
-    gain2.gain.setValueAtTime(0.0001, now);
-    gain2.gain.setValueAtTime(0.0001, now + 0.08);
-    gain2.gain.exponentialRampToValueAtTime(0.45, now + 0.10);
-    gain2.gain.exponentialRampToValueAtTime(0.0001, now + 0.20);
-    osc2.connect(gain2).connect(master);
-    osc2.start(now + 0.08); osc2.stop(now + 0.21);
+    osc.start(now); osc.stop(now + 0.2);
+    const pop = ctx.createOscillator();
+    const popGain = ctx.createGain();
+    pop.type = 'sine';
+    pop.frequency.setValueAtTime(620, now + 0.18);
+    pop.frequency.exponentialRampToValueAtTime(420, now + 0.34);
+    popGain.gain.setValueAtTime(0.001, now + 0.18);
+    popGain.gain.exponentialRampToValueAtTime(0.9, now + 0.19);
+    popGain.gain.exponentialRampToValueAtTime(0.001, now + 0.36);
+    pop.connect(popGain).connect(master);
+    pop.start(now + 0.18); pop.stop(now + 0.38);
   } catch {}
 }
 

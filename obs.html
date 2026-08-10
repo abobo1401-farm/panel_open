@@ -1,12 +1,74 @@
-<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>4×4 パネル公開 OBS</title><link rel="stylesheet" href="style.css"></head><body class="obs-body"><div class="obs-stage"><div id="board"></div></div><script src="app.js"></script><script>
-(async()=>{
- const PR=window.PanelReveal; let state=PR.loadState(); const board=document.getElementById('board'); let opening=false;
- async function draw(){await PR.renderBoard(board,state,{clickable:true,onClick:async(i,tile)=>{
-   if(opening||state.opened[i])return; opening=true; PR.playFlipSound(state.soundVolume);
-   tile.classList.add('open');
-   setTimeout(async()=>{state.opened[i]=true;PR.saveState(state);await draw();opening=false;},610);
- }});}
- await draw();
- PR.subscribeState(async(s)=>{state=s;await draw();});
-})();
-</script></body></html>
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>4×4 パネル公開 OBS</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body class="obs-body">
+  <div class="obs-stage"><div id="board"></div></div>
+  <script src="app.js"></script>
+  <script>
+  (async()=>{
+    const PR=window.PanelReveal;
+    let state=PR.loadState();
+    const board=document.getElementById('board');
+    let animating=false;
+    const FLIP_MS=680;
+
+    async function draw(){
+      await PR.renderBoard(board,state,{clickable:true,onClick:async(i,tile)=>{
+        if(animating||state.opened[i]) return;
+        animating=true;
+        PR.playFlipSound(state.soundVolume);
+        requestAnimationFrame(()=>tile.classList.add('opening'));
+        setTimeout(async()=>{
+          state.opened[i]=true;
+          PR.saveState(state);
+          await draw();
+          animating=false;
+        },FLIP_MS);
+      }});
+    }
+
+    async function animateRemoteOpen(nextState,newlyOpened){
+      if(animating){ state=nextState; await draw(); return; }
+      animating=true;
+
+      // 現在見えているパネルを、その場でめくってから次状態へ切り替える。
+      const tiles=[...board.querySelectorAll('.tile')];
+      const targets=newlyOpened.map(i=>tiles.find(t=>Number(t.dataset.index)===i)).filter(Boolean);
+      if(!targets.length){ state=nextState; await draw(); animating=false; return; }
+
+      PR.playFlipSound(nextState.soundVolume);
+      requestAnimationFrame(()=>targets.forEach(t=>t.classList.add('opening')));
+
+      setTimeout(async()=>{
+        state=nextState;
+        await draw();
+        animating=false;
+      },FLIP_MS);
+    }
+
+    await draw();
+
+    PR.subscribeState(async(nextState,meta)=>{
+      const newlyOpened=[];
+      for(let i=0;i<PR.PANEL_COUNT;i++){
+        if(!state.opened[i] && nextState.opened[i]) newlyOpened.push(i);
+      }
+
+      // 画像差替え・文字変更・閉じ戻しは即時反映。
+      // 閉→開だけはOBSで必ずめくりアニメーションを通す。
+      if(newlyOpened.length){
+        await animateRemoteOpen(nextState,newlyOpened);
+      }else{
+        state=nextState;
+        await draw();
+      }
+    });
+  })();
+  </script>
+</body>
+</html>
