@@ -17,7 +17,7 @@
 
   <div class="card"><h2>表面の文字</h2><div id="labelEditors" class="editor-grid"></div><p class="muted">初期値はすべて「？？？」。入力すると自動保存され、OBS側へ反映されます。</p></div>
 
-  <div class="card"><h2>効果音</h2><div class="row"><div class="range"><span>音量</span><input id="volume" type="range" min="0" max="1" step="0.05"><span id="volText"></span></div><button class="btn" id="soundTest">試聴</button></div><p class="muted">全パネル共通の短い「シュッ＋ポン」系SEです。16枚目も同じ音です。</p></div>
+  <div class="card"><h2>OBS効果音</h2><div class="row"><div class="range"><span>OBS音量</span><input id="volume" type="range" min="0" max="1" step="0.05"><span id="volText"></span></div></div><p class="muted">設定画面では音は鳴りません。パネルを開いたとき、OBS表示側だけでSEが鳴ります。</p></div>
 
   <div class="card"><h2>プレビュー / 操作</h2><div id="board"></div><div class="row" style="margin-top:12px"><button class="btn" id="closeAll">全部閉じる</button><button class="btn" id="openAll">全部開く</button><button class="btn primary" id="saveBtn">保存</button></div></div>
 </div>
@@ -59,13 +59,12 @@
        return;
      }
      if(!window.confirm(`${i+1}番パネルを本当に開けますか？`)) return;
-     tile.classList.add('open');
-     setTimeout(async()=>{
-       state.opened[i]=true;
-       PR.saveState(state);
-       await update();
-       announce(`${i+1}番パネルを開きました`);
-     },610);
+     // 管理画面ではアニメーションなしで即時に開く。
+     // OBS側は状態変化を受け取り、めくりアニメーション＋SEを再生する。
+     state.opened[i]=true;
+     PR.saveState(state);
+     await update();
+     announce(`${i+1}番パネルを開きました`);
    }});
    await refreshThumbs();
  }
@@ -80,7 +79,6 @@
    if(e.target.dataset.remove!=null){const i=+e.target.dataset.remove;await PR.removeImage(`individual-${i}`);state.hasIndividual[i]=false;PR.saveState(state);await update();}
  });
  $('volume').addEventListener('input',e=>{state.soundVolume=+e.target.value;$('volText').textContent=Math.round(state.soundVolume*100)+'%';scheduleSave()});
- $('soundTest').onclick=()=>PR.playFlipSound(state.soundVolume);
  $('closeAll').onclick=async()=>{state.opened=Array(16).fill(false);PR.saveState(state);await update()};
  $('openAll').onclick=async()=>{state.opened=Array(16).fill(true);PR.saveState(state);await update()};
  $('saveBtn').onclick=()=>{state.title=$('title').value;PR.saveState(state);announce('保存しました')};

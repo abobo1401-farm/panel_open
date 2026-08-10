@@ -210,8 +210,9 @@ function playFlipSound(volume = 0.55) {
   const vol = Math.max(0, Math.min(1, Number(volume ?? 0.55)));
   try {
     if (!playFlipSound.audioPool) {
+      const src = new URL('flip.wav', window.location.href).href;
       playFlipSound.audioPool = Array.from({length: 4}, () => {
-        const a = new Audio('flip.wav');
+        const a = new Audio(src);
         a.preload = 'auto';
         return a;
       });
@@ -224,43 +225,8 @@ function playFlipSound(volume = 0.55) {
     a.volume = vol;
     const promise = a.play();
     if (promise && typeof promise.catch === 'function') {
-      promise.catch(() => playFlipSoundWebAudio(vol));
+      promise.catch(()=>{});
     }
-  } catch {
-    playFlipSoundWebAudio(vol);
-  }
-}
-
-function playFlipSoundWebAudio(volume = 0.55) {
-  try {
-    const AudioCtx = window.AudioContext || window.webkitAudioContext;
-    if (!AudioCtx) return;
-    const ctx = playFlipSoundWebAudio.ctx || (playFlipSoundWebAudio.ctx = new AudioCtx());
-    if (ctx.state === 'suspended') ctx.resume().catch(()=>{});
-    const now = ctx.currentTime;
-    const master = ctx.createGain();
-    master.gain.setValueAtTime(Math.max(0, Math.min(1, volume)) * 0.28, now);
-    master.connect(ctx.destination);
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    osc.type = 'triangle';
-    osc.frequency.setValueAtTime(900, now);
-    osc.frequency.exponentialRampToValueAtTime(420, now + 0.16);
-    gain.gain.setValueAtTime(0.001, now);
-    gain.gain.exponentialRampToValueAtTime(0.8, now + 0.01);
-    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.18);
-    osc.connect(gain).connect(master);
-    osc.start(now); osc.stop(now + 0.2);
-    const pop = ctx.createOscillator();
-    const popGain = ctx.createGain();
-    pop.type = 'sine';
-    pop.frequency.setValueAtTime(620, now + 0.18);
-    pop.frequency.exponentialRampToValueAtTime(420, now + 0.34);
-    popGain.gain.setValueAtTime(0.001, now + 0.18);
-    popGain.gain.exponentialRampToValueAtTime(0.9, now + 0.19);
-    popGain.gain.exponentialRampToValueAtTime(0.001, now + 0.36);
-    pop.connect(popGain).connect(master);
-    pop.start(now + 0.18); pop.stop(now + 0.38);
   } catch {}
 }
 
