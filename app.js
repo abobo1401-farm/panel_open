@@ -206,31 +206,111 @@ async function renderBoard(root, state, { clickable = false, allowOpenedClick = 
   }
 }
 
-function playFlipSound(volume = 0.55) {
-  const vol = Math.max(0, Math.min(1, Number(volume ?? 0.55)));
+/* ============================================================
+   効果音（v0.2.6）
+   ・Web Audio API でwavを事前デコードして保持
+   ・ページ表示時に無音を1回鳴らして出力経路を起動（プライミング）
+   → 1回目のSEが遅れる／頭が切れる問題を防ぐ
+   ============================================================ */
+
+// flip.wav をノーマライズ済みの音源に差し替えた場合は 1.0 のまま。
+// 元の小さいwavをそのまま使う場合は 3.0〜5.0 くらいに上げてください。
+const FLIP_GAIN = 1.0;
+
+let audioCtx = null;
+let flipBuffer = null;
+let flipLoading = null;
+
+function flipUrl() {
+  return new URL('flip.wav', window.location.href).href;
+}
+
+function ensureAudioContext() {
+  if (!audioCtx) {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return null;
+    try { audioCtx = new AC(); } catch { return null; }
+  }
+  if (audioCtx.state !== 'running') audioCtx.resume().catch(() => {});
+  return audioCtx;
+}
+
+function loadFlipBuffer() {
+  if (flipBuffer) return Promise.resolve(flipBuffer);
+  if (flipLoading) return flipLoading;
+  const ctx = ensureAudioContext();
+  if (!ctx) return Promise.resolve(null);
+  flipLoading = fetch(flipUrl())
+    .then(r => r.arrayBuffer())
+    .then(buf => new Promise((res, rej) => {
+      // Safari系の古い実装も通るようコールバック形式で呼ぶ
+      const p = ctx.decodeAudioData(buf, res, rej);
+      if (p && typeof p.then === 'function') p.then(res, rej);
+    }))
+    .then(b => { flipBuffer = b; return b; })
+    .catch(() => { flipLoading = null; return null; });
+  return flipLoading;
+}
+
+// ページ表示直後に呼ぶ。デコード＋無音再生でオーディオ経路を温める。
+async function primeAudio() {
+  const ctx = ensureAudioContext();
+  if (!ctx) return;
+  await loadFlipBuffer();
   try {
-    if (!playFlipSound.audioPool) {
-      const src = new URL('flip.wav', window.location.href).href;
-      playFlipSound.audioPool = Array.from({length: 4}, () => {
-        const a = new Audio(src);
-        a.preload = 'auto';
-        return a;
-      });
-      playFlipSound.audioIndex = 0;
-    }
-    const pool = playFlipSound.audioPool;
-    const a = pool[playFlipSound.audioIndex++ % pool.length];
-    a.pause();
-    a.currentTime = 0;
-    a.volume = vol;
-    const promise = a.play();
-    if (promise && typeof promise.catch === 'function') {
-      promise.catch(()=>{});
-    }
+    const s = ctx.createBufferSource();
+    s.buffer = ctx.createBuffer(1, Math.max(1, Math.floor(ctx.sampleRate * 0.05)), ctx.sampleRate);
+    s.connect(ctx.destination);
+    s.start();
   } catch {}
 }
 
+function playFlipFallback(vol) {
+  try {
+    if (!playFlipFallback.pool) {
+      playFlipFallback.pool = Array.from({ length: 4 }, () => {
+        const a = new Audio(flipUrl());
+        a.preload = 'auto';
+        return a;
+      });
+      playFlipFallback.index = 0;
+    }
+    const pool = playFlipFallback.pool;
+    const a = pool[playFlipFallback.index++ % pool.length];
+    a.pause();
+    a.currentTime = 0;
+    a.volume = vol;
+    const p = a.play();
+    if (p && typeof p.catch === 'function') p.catch(() => {});
+  } catch {}
+}
+
+function playFlipSound(volume = 0.55) {
+  const vol = Math.max(0, Math.min(1, Number(volume ?? 0.55)));
+  const ctx = ensureAudioContext();
+  if (ctx && flipBuffer) {
+    try {
+      const src = ctx.createBufferSource();
+      src.buffer = flipBuffer;
+      const g = ctx.createGain();
+      g.gain.value = Math.min(1, vol * FLIP_GAIN);
+      src.connect(g);
+      g.connect(ctx.destination);
+      src.start();
+      return;
+    } catch {}
+  }
+  // まだデコードが終わっていない初回だけHTMLAudioで鳴らし、裏で読み込みを開始
+  loadFlipBuffer();
+  playFlipFallback(vol);
+}
+
+// 何か操作があったときにコンテキストが止まっていたら復帰させる
+['click', 'pointerdown', 'keydown', 'visibilitychange'].forEach(ev => {
+  window.addEventListener(ev, () => { if (audioCtx && audioCtx.state !== 'running') audioCtx.resume().catch(() => {}); }, { passive: true });
+});
+
 window.PanelReveal = {
   PANEL_COUNT, DEFAULT_STATE, normalizeState, loadState, saveState, subscribeState,
-  putImage, getImageUrl, removeImage, renderBoard, playFlipSound, sendMessage
+  putImage, getImageUrl, removeImage, renderBoard, playFlipSound, primeAudio, sendMessage
 };

@@ -17,6 +17,12 @@
     let animating=false;
     const FLIP_MS=680;
 
+    // 起動直後にwavのデコードとオーディオ出力の起動を済ませておく。
+    // これをやらないと「1回目のSEだけ遅れる／頭が切れて聞こえづらい」現象が起きる。
+    PR.primeAudio();
+    // OBSでソースを非表示→表示した直後にも鳴らし直せるよう再プライミング
+    document.addEventListener('visibilitychange',()=>{if(!document.hidden)PR.primeAudio()});
+
     async function draw(){
       await PR.renderBoard(board,state,{clickable:true,onClick:async(i,tile)=>{
         if(animating||state.opened[i]) return;
