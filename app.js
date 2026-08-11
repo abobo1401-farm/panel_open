@@ -285,20 +285,31 @@ function playFlipFallback(vol) {
   } catch {}
 }
 
+function fireFlip(ctx, vol) {
+  try {
+    const src = ctx.createBufferSource();
+    src.buffer = flipBuffer;
+    const g = ctx.createGain();
+    g.gain.value = Math.min(1, vol * FLIP_GAIN);
+    src.connect(g);
+    g.connect(ctx.destination);
+    src.start();
+    return true;
+  } catch { return false; }
+}
+
 function playFlipSound(volume = 0.55) {
   const vol = Math.max(0, Math.min(1, Number(volume ?? 0.55)));
   const ctx = ensureAudioContext();
   if (ctx && flipBuffer) {
-    try {
-      const src = ctx.createBufferSource();
-      src.buffer = flipBuffer;
-      const g = ctx.createGain();
-      g.gain.value = Math.min(1, vol * FLIP_GAIN);
-      src.connect(g);
-      g.connect(ctx.destination);
-      src.start();
+    if (ctx.state === 'running') {
+      if (fireFlip(ctx, vol)) return;
+    } else {
+      // 一時停止中は復帰を待ってから鳴らす（取りこぼし防止）
+      ctx.resume().then(() => { if (!fireFlip(ctx, vol)) playFlipFallback(vol); })
+                  .catch(() => playFlipFallback(vol));
       return;
-    } catch {}
+    }
   }
   // まだデコードが終わっていない初回だけHTMLAudioで鳴らし、裏で読み込みを開始
   loadFlipBuffer();

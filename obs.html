@@ -12,65 +12,78 @@
   <script>
   (async()=>{
     const PR=window.PanelReveal;
-    let state=PR.loadState();
     const board=document.getElementById('board');
-    let animating=false;
     const FLIP_MS=680;
+
+    let state=PR.loadState();
+    let redrawTimer=null;
 
     // 起動直後にwavのデコードとオーディオ出力の起動を済ませておく。
     // これをやらないと「1回目のSEだけ遅れる／頭が切れて聞こえづらい」現象が起きる。
     PR.primeAudio();
-    // OBSでソースを非表示→表示した直後にも鳴らし直せるよう再プライミング
     document.addEventListener('visibilitychange',()=>{if(!document.hidden)PR.primeAudio()});
 
+    // 開閉以外（モード・文字・画像）に変化があったかどうかの判定用
+    function looksSig(s){
+      return JSON.stringify([s.mode,s.labels,s.hasCover,s.hasOneBack,s.hasIndividual]);
+    }
+
+    function scheduleRedraw(delay){
+      clearTimeout(redrawTimer);
+      redrawTimer=setTimeout(()=>{draw();},delay);
+    }
+
     async function draw(){
-      await PR.renderBoard(board,state,{clickable:true,onClick:async(i,tile)=>{
-        if(animating||state.opened[i]) return;
-        animating=true;
+      clearTimeout(redrawTimer);
+      await PR.renderBoard(board,state,{clickable:true,onClick:(i,tile)=>{
+        if(state.opened[i]) return;
+        // ★ SEはロックや再描画の完了を待たずに即座に鳴らす
         PR.playFlipSound(state.soundVolume);
+        state.opened[i]=true;
         requestAnimationFrame(()=>tile.classList.add('opening'));
-        setTimeout(async()=>{
-          state.opened[i]=true;
-          PR.saveState(state);
-          await draw();
-          animating=false;
-        },FLIP_MS);
+        PR.saveState(state);   // 管理画面側へ反映
       }});
     }
 
-    async function animateRemoteOpen(nextState,newlyOpened){
-      if(animating){ state=nextState; await draw(); return; }
-      animating=true;
-
-      // 現在見えているパネルを、その場でめくってから次状態へ切り替える。
-      const tiles=[...board.querySelectorAll('.tile')];
-      const targets=newlyOpened.map(i=>tiles.find(t=>Number(t.dataset.index)===i)).filter(Boolean);
-      if(!targets.length){ state=nextState; await draw(); animating=false; return; }
-
-      PR.playFlipSound(nextState.soundVolume);
-      requestAnimationFrame(()=>targets.forEach(t=>t.classList.add('opening')));
-
-      setTimeout(async()=>{
-        state=nextState;
-        await draw();
-        animating=false;
-      },FLIP_MS);
+    // .opening のまま置いておけば .open と同じ最終形なので、
+    // めくり後に再描画しなくてよい＝連打しても取りこぼしが出ない
+    function flipTiles(indexes){
+      let missed=0;
+      indexes.forEach(i=>{
+        const t=board.querySelector('.tile[data-index="'+i+'"]');
+        if(t && !t.classList.contains('open')){
+          requestAnimationFrame(()=>t.classList.add('opening'));
+        }else{
+          missed++;
+        }
+      });
+      return missed;
     }
 
     await draw();
 
     PR.subscribeState(async(nextState,meta)=>{
       const newlyOpened=[];
+      let closed=false;
       for(let i=0;i<PR.PANEL_COUNT;i++){
         if(!state.opened[i] && nextState.opened[i]) newlyOpened.push(i);
+        if(state.opened[i] && !nextState.opened[i]) closed=true;
       }
+      const otherChanged = looksSig(nextState)!==looksSig(state) || meta?.imagesChanged;
 
-      // 画像差替え・文字変更・閉じ戻しは即時反映。
-      // 閉→開だけはOBSで必ずめくりアニメーションを通す。
+      // ★ 状態を先に確定させる。
+      //   BroadcastChannelとstorageイベントの二重配信でも、
+      //   2回目は newlyOpened が空になるのでSEは二度鳴らない。
+      state=nextState;
+
+      // ★ SEは何よりも先、無条件に鳴らす（アニメーションの成否と切り離す）
+      if(newlyOpened.length) PR.playFlipSound(nextState.soundVolume);
+
       if(newlyOpened.length){
-        await animateRemoteOpen(nextState,newlyOpened);
-      }else{
-        state=nextState;
+        const missed=flipTiles(newlyOpened);
+        // 描画中などでタイルを掴めなかった分だけ、めくり終了後に描き直して整合させる
+        if(missed || closed || otherChanged) scheduleRedraw(FLIP_MS+40);
+      }else if(closed || otherChanged){
         await draw();
       }
     });
